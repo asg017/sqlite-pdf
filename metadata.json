@@ -1,0 +1,7 @@
+{
+  "plugins": {
+    "datasette-render-images": {
+      "size_limit": 1000000
+    }
+  }
+}

@@ -1,0 +1,11 @@
+.vscode
+/target
+
+include/
+lib/
+args.gn
+*.png
+*.tgz
+&.cmake
+*.pdf
+*.db

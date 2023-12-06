@@ -1,0 +1,12 @@
+[package]
+name = "sqlite-pdfium"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pdfium-render = {version="0.8.16", features=["image"]}
+sqlite-loadable = "0.0.6-alpha.6"
+image = { version = ">= 0.24.0" }
+
+[lib]
+crate-type=["lib", "cdylib", "staticlib"]
