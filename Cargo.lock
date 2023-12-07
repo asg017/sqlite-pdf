@@ -919,8 +919,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "sqlite-pdfium"
-version = "0.1.0"
+name = "sqlite-pdf"
+version = "0.0.1-alpha.1"
 dependencies = [
  "image",
  "pdfium-render",

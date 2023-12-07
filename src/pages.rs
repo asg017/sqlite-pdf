@@ -8,11 +8,13 @@ use sqlite_loadable::{prelude::*, Error};
 
 use std::{marker::PhantomData, mem, os::raw::c_int};
 
-static CREATE_SQL: &str = "CREATE TABLE x(width int, height int, full_text text, page, pdf hidden)";
+static CREATE_SQL: &str =
+    "CREATE TABLE x(width int, height int, label text, full_text text, page, pdf hidden)";
 enum Columns {
     Width,
     Height,
     FullText,
+    Label,
     Page,
     Pdf,
 }
@@ -20,9 +22,10 @@ fn column(index: i32) -> Option<Columns> {
     match index {
         0 => Some(Columns::Width),
         1 => Some(Columns::Height),
-        2 => Some(Columns::FullText),
-        3 => Some(Columns::Page),
-        4 => Some(Columns::Pdf),
+        2 => Some(Columns::Label),
+        3 => Some(Columns::FullText),
+        4 => Some(Columns::Page),
+        5 => Some(Columns::Pdf),
         _ => None,
     }
 }
@@ -40,7 +43,7 @@ impl<'vtab> VTab<'vtab> for PdfPagesTable {
 
     fn connect(
         _db: *mut sqlite3,
-        aux: Option<&Self::Aux>,
+        _aux: Option<&Self::Aux>,
         _args: VTabArguments,
     ) -> Result<(String, PdfPagesTable)> {
         let base: sqlite3_vtab = unsafe { mem::zeroed() };
@@ -86,7 +89,6 @@ impl<'vtab> VTab<'vtab> for PdfPagesTable {
     }
 }
 
-type MMatch = (usize, usize, String);
 #[repr(C)]
 pub struct PdfPagesCursor<'vtab> {
     /// Base class. Must be first
@@ -98,7 +100,7 @@ pub struct PdfPagesCursor<'vtab> {
     phantom: PhantomData<&'vtab PdfPagesTable>,
 }
 impl PdfPagesCursor<'_> {
-    fn new<'vtab>(pdfium: &'vtab Pdfium) -> PdfPagesCursor<'vtab> {
+    fn new(pdfium: &Pdfium) -> PdfPagesCursor<'_> {
         let base: sqlite3_vtab_cursor = unsafe { mem::zeroed() };
         PdfPagesCursor {
             base,
@@ -128,7 +130,6 @@ impl VTabCursor for PdfPagesCursor<'_> {
     }
 
     fn next(&mut self) -> Result<()> {
-        println!("next");
         self.rowid += 1;
         Ok(())
     }
@@ -138,46 +139,36 @@ impl VTabCursor for PdfPagesCursor<'_> {
     }
 
     fn column(&self, context: *mut sqlite3_context, i: c_int) -> Result<()> {
+        let page = self
+            .pdf_document
+            .as_ref()
+            .unwrap()
+            .pages()
+            .get(self.rowid)
+            .unwrap();
         match column(i) {
             Some(Columns::Width) => {
-                let page = self
-                    .pdf_document
-                    .as_ref()
-                    .unwrap()
-                    .pages()
-                    .get(self.rowid)
-                    .unwrap();
                 api::result_double(context, page.width().value.into());
             }
             Some(Columns::Height) => {
-                let page = self
-                    .pdf_document
-                    .as_ref()
-                    .unwrap()
-                    .pages()
-                    .get(self.rowid)
-                    .unwrap();
                 api::result_double(context, page.height().value.into());
             }
+            Some(Columns::Label) => match page.label() {
+                Some(label) => api::result_text(context, label)?,
+                None => api::result_null(context),
+            },
             Some(Columns::FullText) => {
-                let page = self
-                    .pdf_document
-                    .as_ref()
-                    .unwrap()
-                    .pages()
-                    .get(self.rowid)
-                    .unwrap();
                 api::result_text(context, page.text().unwrap().all())?;
             }
             Some(Columns::Page) => {
-                let page = self
-                    .pdf_document
-                    .as_ref()
-                    .unwrap()
-                    .pages()
-                    .get(self.rowid)
-                    .unwrap();
-                api::result_pointer(context, b"wut\0", page);
+                api::result_pointer(
+                    context,
+                    b"wut\0",
+                    (
+                        self.pdf_document.as_ref().unwrap() as *const PdfDocument,
+                        page,
+                    ),
+                );
             }
             Some(Columns::Pdf) => {
                 api::result_null(context);

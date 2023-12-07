@@ -1,6 +1,6 @@
 .vscode
 /target
-
+dist/
 include/
 lib/
 args.gn

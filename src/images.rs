@@ -1,18 +1,25 @@
+use image::ImageOutputFormat;
 use pdfium_render::{
     document::PdfDocument,
-    page::PdfPage,
-    page_object::{PdfPageObject, PdfPageObjectCommon, PdfPageObjectType},
+    page_object::{PdfPageObject, PdfPageObjectCommon},
     page_objects_common::{PdfPageObjectsCommon, PdfPageObjectsIterator},
     pdfium::Pdfium,
 };
+use sqlite_loadable::prelude::*;
 use sqlite_loadable::{
     api,
     table::{ConstraintOperator, IndexInfo, VTab, VTabArguments, VTabCursor},
     BestIndexError, Result,
 };
-use sqlite_loadable::{prelude::*, Error};
 
-use std::{marker::PhantomData, mem, os::raw::c_int};
+use std::{
+    io::{Read, Seek},
+    marker::PhantomData,
+    mem,
+    os::raw::c_int,
+};
+
+use crate::PagePointer;
 
 static CREATE_SQL: &str = "CREATE TABLE x(x, y, width, height, image, page hidden)";
 enum Columns {
@@ -47,7 +54,7 @@ impl<'vtab> VTab<'vtab> for PdfImagesTable {
 
     fn connect(
         _db: *mut sqlite3,
-        aux: Option<&Self::Aux>,
+        _aux: Option<&Self::Aux>,
         _args: VTabArguments,
     ) -> Result<(String, PdfImagesTable)> {
         let base: sqlite3_vtab = unsafe { mem::zeroed() };
@@ -60,7 +67,6 @@ impl<'vtab> VTab<'vtab> for PdfImagesTable {
     }
 
     fn best_index(&self, mut info: IndexInfo) -> core::result::Result<(), BestIndexError> {
-        println!("pdf_pages best_index");
         let mut has_page = false;
         for mut constraint in info.constraints() {
             match column(constraint.column_idx()) {
@@ -91,12 +97,12 @@ impl<'vtab> VTab<'vtab> for PdfImagesTable {
     }
 }
 
-type MMatch = (usize, usize, String);
 #[repr(C)]
 pub struct PdfImagesCursor<'vtab> {
     /// Base class. Must be first
     base: sqlite3_vtab_cursor,
     rowid: i64,
+    document: Option<*const PdfDocument<'vtab>>,
     current: Option<PdfPageObject<'vtab>>,
     iter: Option<PdfPageObjectsIterator<'vtab>>,
     phantom: PhantomData<&'vtab PdfImagesTable>,
@@ -107,6 +113,7 @@ impl PdfImagesCursor<'_> {
         PdfImagesCursor {
             base,
             rowid: 0,
+            document: None,
             current: None,
             iter: None,
             phantom: PhantomData,
@@ -121,10 +128,10 @@ impl VTabCursor for PdfImagesCursor<'_> {
         _idx_str: Option<&str>,
         values: &[*mut sqlite3_value],
     ) -> Result<()> {
-        println!("pdf_images");
-        let page: *mut PdfPage = unsafe { api::value_pointer(&values[0], b"wut\0").unwrap() };
+        let page: *mut PagePointer = unsafe { api::value_pointer(&values[0], b"wut\0").unwrap() };
         unsafe {
-            let o = (*page).objects().iter();
+            let o = (*page).1.objects().iter();
+            self.document = Some((*page).0);
             self.iter = Some(o);
         }
 
@@ -163,7 +170,16 @@ impl VTabCursor for PdfImagesCursor<'_> {
                 api::result_double(context, img.height().unwrap().value.into())
             }
             Some(Columns::Image) => {
-                //img.get_processed_image();
+                let i = img
+                    .get_processed_image(unsafe { &*self.document.unwrap() })
+                    .unwrap();
+                let mut c = std::io::Cursor::new(Vec::new());
+                i.write_to(&mut c, ImageOutputFormat::Png).unwrap();
+                let mut buffer = Vec::new();
+                c.seek(std::io::SeekFrom::Start(0)).unwrap();
+                c.read_to_end(&mut buffer).unwrap();
+
+                api::result_blob(context, buffer.as_slice());
             }
 
             Some(Columns::Page) => {

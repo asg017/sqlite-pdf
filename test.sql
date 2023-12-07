@@ -1,22 +1,26 @@
 .timer on
 
-.load target/debug/libsqlite_pdfium.dylib sqlite3_hello_init
+.load dist/debug/pdf0
 
 .mode box
 .header on
 
+select *
+from pdf_pages(
+  readfile('pdf_commenting_new.pdf')
+);
+
+
 select
   pdf_pages.rowid,
-  pdf_images.*
+  pdf_annotations.*
 from pdf_pages(
-  readfile('signed_taranto_statement_of_facts_complaint_final_redacted_0.pdf')
+  readfile('pdf_commenting_new.pdf')
 )
-join pdf_images(pdf_pages.page)
-limit 10;
+join pdf_annotations(pdf_pages.page);
 
-.exit
 
-create table t as
+--create table pages_demo as
 select
   width,
   height,
@@ -25,3 +29,15 @@ select
 from pdf_pages(
   readfile('signed_taranto_statement_of_facts_complaint_final_redacted_0.pdf')
 );
+
+
+--create table images_demo as
+select
+  pdf_pages.rowid as page_rowid,
+  pdf_images.*
+from pdf_pages(
+  readfile('signed_taranto_statement_of_facts_complaint_final_redacted_0.pdf')
+)
+join pdf_images(pdf_pages.page);
+
+

@@ -1,3 +1,4 @@
+mod annotations;
 mod images;
 mod pages;
 use std::io::{Read, Seek};
@@ -8,14 +9,16 @@ use pdfium_render::prelude::*;
 use sqlite_loadable::{api, define_scalar_function, Result};
 use sqlite_loadable::{define_table_function, prelude::*};
 
+type PagePointer<'a> = (*const PdfDocument<'a>, PdfPage<'a>);
 pub fn pdf_page_thumbnail(
     context: *mut sqlite3_context,
     values: &[*mut sqlite3_value],
 ) -> Result<()> {
-    let page: *mut PdfPage = unsafe { api::value_pointer(&values[0], b"wut\0").unwrap() };
+    let xx: *mut PagePointer = unsafe { api::value_pointer(&values[0], b"wut\0").unwrap() };
+
     let cfg = PdfRenderConfig::new().thumbnail(256);
     unsafe {
-        let bitmap = (*page).render_with_config(&cfg).unwrap();
+        let bitmap = (*xx).1.render_with_config(&cfg).unwrap();
         let mut c = std::io::Cursor::new(Vec::new());
         bitmap
             .as_image()
@@ -29,39 +32,19 @@ pub fn pdf_page_thumbnail(
     }
     Ok(())
 }
+pub fn pdf_page_xxx(context: *mut sqlite3_context, values: &[*mut sqlite3_value]) -> Result<()> {
+    let xx: *mut PagePointer = unsafe { api::value_pointer(&values[0], b"wut\0").unwrap() };
+
+    unsafe {
+        let p = Pdfium::default();
+        let x = p.create_new_pdf().unwrap();
+        //x.pages().copy_pages_from_document(source, pages, destination_page_index)
+    }
+    Ok(())
+}
 
 #[sqlite_entrypoint]
-pub fn sqlite3_hello_init(db: *mut sqlite3) -> Result<()> {
-    // For general comments about pdfium-render and binding to Pdfium, see export.rs.
-
-    /*
-    let pdf = pdfium.load_pdf_from_file("test.pdf", None).unwrap();
-    pdf.pages().iter().enumerate().for_each(|(index, page)| {
-        println!("=============== Page {} ===============", index);
-        let cfg = PdfRenderConfig::new().thumbnail(800);
-        let bitmap = page.render_with_config(&cfg).unwrap();
-        bitmap
-            .as_image()
-            .save_with_format("file.png", image::ImageFormat::Png)
-            .unwrap();
-        for object in page.objects().iter() {
-            match &object {
-                PdfPageObject::Text(t) => {
-                    println!("text: {} at {}", t.text(), t.bounds().unwrap())
-                }
-                PdfPageObject::Path(path) => {
-                    println!("path: {:?}", path.segments().len())
-                }
-                PdfPageObject::Image(image) => {
-                    println!("image: {:?}x{:?}", image.width(), image.height())
-                }
-                PdfPageObject::Shading(_) => todo!("Shading"),
-                PdfPageObject::XObjectForm(_) => todo!("XObjectForm"),
-                PdfPageObject::Unsupported(_) => todo!("Unsupported"),
-            }
-        }
-    });
-    */
+pub fn sqlite3_pdf_init(db: *mut sqlite3) -> Result<()> {
     define_scalar_function(
         db,
         "pdf_page_thumbnail",
@@ -71,5 +54,6 @@ pub fn sqlite3_hello_init(db: *mut sqlite3) -> Result<()> {
     )?;
     define_table_function::<pages::PdfPagesTable>(db, "pdf_pages", None)?;
     define_table_function::<images::PdfImagesTable>(db, "pdf_images", None)?;
+    define_table_function::<annotations::PdfAnnotationsTable>(db, "pdf_annotations", None)?;
     Ok(())
 }
